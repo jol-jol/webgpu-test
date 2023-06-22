@@ -1,0 +1,150 @@
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>WebGPU Test</title>
+  </head>
+  <body>
+    <canvas width="512" height="512"></canvas>
+    <script type="module">
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+
+const module = device.createShaderModule({
+    code: `
+        @group(0) @binding(0)
+        var<storage, read> input: array<u32>;
+
+        @group(0) @binding(1)
+        var<storage, read_write> output: array<u32>;
+
+        @compute @workgroup_size(8, 8)
+        fn main(@builtin(global_invocation_id) global_id: vec3<u32>){
+            var curr: u32 = 0;
+            for (var k: u32 = 0; k < 2048; k ++) {
+              curr += input[global_id.y * 2048 + k] * input[k * 2048 + global_id.x];
+            }
+            output[global_id.y * 2048 + global_id.x] = curr;
+        }
+    `
+});
+
+const bindGroupLayout = device.createBindGroupLayout({
+    entries: [
+        {
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "read-only-storage"
+            }
+        },
+        {
+            binding: 1,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "storage"
+            }
+        }
+    ]
+});
+
+const pipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout]
+    }),
+    compute: {
+        module,
+        entryPoint: "main"
+    }
+});
+
+
+export async function addMatrixWebGpu(matrix){
+    const bufferSize = matrix.shape[0] * matrix.shape[1] * 4;
+
+
+    const input = device.createBuffer({
+        size: bufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    });
+
+    const output = device.createBuffer({
+        size: bufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    });
+
+    const stagingBuffer = device.createBuffer({
+        size: bufferSize,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    });
+
+    const bindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: input
+                }
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: output
+                }
+            }
+        ]
+    });
+
+    device.queue.writeBuffer(input, 0, matrix.data);
+    const commandEncoder = device.createCommandEncoder();
+    const passEncoder = commandEncoder.beginComputePass();
+    passEncoder.setPipeline(pipeline);
+    passEncoder.setBindGroup(0, bindGroup);
+    passEncoder.dispatchWorkgroups(2048 / 8, 2048 / 8);
+    passEncoder.end();
+    commandEncoder.copyBufferToBuffer(output, 0, stagingBuffer, 0, bufferSize);
+    const commands = commandEncoder.finish();
+    device.queue.submit([commands]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ, 0, bufferSize);
+    const copyArrayBuffer = stagingBuffer.getMappedRange(0, bufferSize);
+    const result = copyArrayBuffer.slice();
+    stagingBuffer.unmap();
+
+    return {
+        shape: matrix.shape,
+        data: new Uint32Array(result)
+    }
+}
+
+const matrix = [];
+for (var i = 0; i < 2048 * 2048; i ++) {
+  matrix.push(Math.round(Math.random() * 2));
+}
+
+console.log('GPU calculating!');
+const data = {shape: [2048, 2048], data: new Uint32Array(matrix)};
+const gpuResult = await addMatrixWebGpu(data);
+console.log(gpuResult.data);
+
+console.log('CPU calculating!');
+function cpuCalculate() {
+  var cpuResult = [];
+  for (var i = 0; i < 2048; i ++) {
+    for (var j = 0; j < 2048; j ++) {
+      var curr = 0.0;
+      for (var k = 0; k < 2048; k ++) {
+        curr += matrix[i * 2048 + k] * matrix[k * 2048 + j];
+      }
+      cpuResult.push(curr);
+    }
+  }
+  return cpuResult;
+}
+console.log(cpuCalculate());
+
+    </script>
+  </body>
+</html>
