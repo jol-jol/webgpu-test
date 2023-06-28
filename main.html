@@ -22,10 +22,10 @@ const module = device.createShaderModule({
         @compute @workgroup_size(8, 8)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>){
             var curr: u32 = 0;
-            for (var k: u32 = 0; k < 4096; k ++) {
-              curr += input[global_id.y * 4096 + k] * input[k * 4096 + global_id.x];
+            for (var k: u32 = 0; k < 2048; k ++) {
+              curr += input[global_id.y * 2048 + k] * input[k * 2048 + global_id.x];
             }
-            output[global_id.y * 4096 + global_id.x] = curr;
+            output[global_id.y * 2048 + global_id.x] = curr;
         }
     `
 });
@@ -102,7 +102,7 @@ export async function addMatrixWebGpu(matrix){
     const passEncoder = commandEncoder.beginComputePass();
     passEncoder.setPipeline(pipeline);
     passEncoder.setBindGroup(0, bindGroup);
-    passEncoder.dispatchWorkgroups(4096 / 8, 4096 / 8);
+    passEncoder.dispatchWorkgroups(2048 / 8, 2048 / 8);
     passEncoder.end();
     commandEncoder.copyBufferToBuffer(output, 0, stagingBuffer, 0, bufferSize);
     const commands = commandEncoder.finish();
@@ -120,23 +120,23 @@ export async function addMatrixWebGpu(matrix){
 }
 
 const matrix = [];
-for (var i = 0; i < 4096 * 4096; i ++) {
+for (var i = 0; i < 2048 * 2048; i ++) {
   matrix.push(Math.round(Math.random() * 2));
 }
 
 console.log('GPU calculating!');
-const data = {shape: [4096, 4096], data: new Uint32Array(matrix)};
+const data = {shape: [2048, 2048], data: new Uint32Array(matrix)};
 const gpuResult = await addMatrixWebGpu(data);
 console.log(gpuResult.data);
 
 console.log('CPU calculating!');
 function cpuCalculate() {
   var cpuResult = [];
-  for (var i = 0; i < 4096; i ++) {
-    for (var j = 0; j < 4096; j ++) {
+  for (var i = 0; i < 2048; i ++) {
+    for (var j = 0; j < 2048; j ++) {
       var curr = 0.0;
-      for (var k = 0; k < 4096; k ++) {
-        curr += matrix[i * 4096 + k] * matrix[k * 4096 + j];
+      for (var k = 0; k < 2048; k ++) {
+        curr += matrix[i * 2048 + k] * matrix[k * 2048 + j];
       }
       cpuResult.push(curr);
     }
